@@ -41,7 +41,7 @@ class imageTransfer(QObject):
         self.protocol = self.parent.protocol
 
         # the actual image
-        self.imageRecord = image.baseImageRecord()
+        self.imageRecord = image.imageRecord()
 
     @property
     def size(self):

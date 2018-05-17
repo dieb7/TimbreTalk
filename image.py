@@ -1,8 +1,5 @@
 # build image from intel hex or motorola Srecord file  Robert Chapman III  May 7, 2015
 
-from pyqtapi2 import *
-
-import sys, traceback
 from message import *
 from checksum import fletcher32
 import os
@@ -11,7 +8,7 @@ from ctypes import *
 printme = 0
 
 
-class baseImageRecord(object):
+class imageRecord(object):
 	MAX_IMAGE_SIZE = 1024 * 1024 * 2   # 2MB
 	HOLE_FILL = 0xFF
 
@@ -315,40 +312,5 @@ class baseImageRecord(object):
 				if printme: print("address: %x  start: %x  end: %x"%(address, self.start, self.end))
 
 		file.close()
-
-
-class imageRecord(baseImageRecord, QObject):
-	setSize = Signal(object)
-	setName = Signal(object)
-	setStart = Signal(object)
-	imageLoaded = Signal()
-
-	def __init__(self, parent):
-		baseImageRecord.__init__(self)
-		QObject.__init__(self)  # needed for signals to work!!
-		self.parent = parent
-
-	def createImage(self, file):
-		if file:
-			baseImageRecord.createImage(self, file)
-			self.imageLoaded.emit()
-
-	def selectFile(self, file):
-		if not file: return
-		try:
-			self.createImage(file)
-			self.setName.emit(self.name)
-			self.setSize.emit(str(self.size))
-			self.setStart.emit(hex(self.start))
-		except Exception, e:
-			print >>sys.stderr, e
-			traceback.print_exc(file=sys.stderr)
-
-	def checkUpdates(self):
-		if self.timestamp != os.path.getmtime(self.file):
-			warning(' disk image is newer - reloading ')
-			self.selectFile(self.file)
-			return True
-		return False
 
 # unit test code: convert srec and hex file to images and compare checksums
