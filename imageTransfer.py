@@ -2,15 +2,16 @@
 
 from pyqtapi2 import *
 
-import sys, traceback	
+import traceback
 from endian import *
 from message import *
-from checksum import fletcher32
 import image
 from transfer import *
 import protocols.pids as pids
+import os
 
-class imageTransfer(image.imageRecord):
+
+class imageTransfer(QObject):
     setProgress = Signal(object)
     setAction = Signal(object)
     # perhaps the following parameters should be in the children files which use SFP
@@ -21,8 +22,14 @@ class imageTransfer(image.imageRecord):
     transferType = BINARY_TRANSFER # type of file if needed
     maxRetries = 5 # maximum number of retries for transferring chunks
 
+    setName = Signal(object)
+    setSize = Signal(object)
+    setStart = Signal(object)
+    imageLoaded = Signal()
+
     def __init__(self, parent):
-        super(imageTransfer, self).__init__(parent)
+        QObject.__init__(self)
+        self.parent = parent
 
         # timing
         self.transferTimer = QTimer()
@@ -33,6 +40,63 @@ class imageTransfer(image.imageRecord):
         # shortcuts
         self.protocol = self.parent.protocol
 
+        # the actual image
+        self.imageRecord = image.baseImageRecord()
+
+    @property
+    def size(self):
+        return self.imageRecord.size
+
+    @size.setter
+    def size(self, value):
+        self.imageRecord.size = value
+
+    @property
+    def checksum(self):
+        return self.imageRecord.checksum
+
+    @property
+    def dir(self):
+            return self.imageRecord.dir
+
+    @dir.setter
+    def dir(self, value):
+        self.imageRecord.dir = value
+
+    @property
+    def image(self):
+        return self.imageRecord.image
+
+    @property
+    def timestamp(self):
+        return self.imageRecord.timestamp
+
+    @property
+    def file(self):
+        return self.imageRecord.file
+
+    @file.setter
+    def file(self, value):
+        self.imageRecord.file = value
+
+    def selectFile(self, file):
+        if not file: return
+        try:
+            self.imageRecord.createImage(file)
+            self.imageLoaded.emit()
+            self.setName.emit(self.imageRecord.name)
+            self.setSize.emit(str(self.imageRecord.size))
+            self.setStart.emit(hex(self.imageRecord.start))
+        except Exception, e:
+            print >> sys.stderr, e
+            traceback.print_exc(file=sys.stderr)
+
+    def checkUpdates(self):
+        if self.imageRecord.timestamp != os.path.getmtime(self.file):
+            warning(' disk image is newer - reloading ')
+            self.selectFile(self.file)
+            return True
+        return False
 
     def who(self):
         return self.parent.parent.who() # packet routing
