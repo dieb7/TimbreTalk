@@ -245,7 +245,7 @@ class efmTransfer(microTransfer):
             self.send('u')
         self.serialPort.getc(9, .1) # pull out <d><a>Ready<d><a> reply
 
-        filename = self.file.rsplit(".", 1)[0] + ".bin" # xmodem works with binary image
+        filename = self.imageRecord.file.rsplit(".", 1)[0] + ".bin" # xmodem works with binary image
         self.sent.value = 0
         self.size = os.path.getsize(filename)
         self.transferTimer.start(6000 + (self.size / 7)) # in ms

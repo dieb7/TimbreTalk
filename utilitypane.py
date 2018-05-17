@@ -73,7 +73,7 @@ class utilityPane(QWidget):
         self.ui.microSelect.currentIndexChanged.connect(self.selectMicro)
         self.micro.setName.connect(self.ui.bootFile.setText)
         self.micro.setSize.connect(self.ui.bootSize.setText)
-        self.ui.bootSelect.clicked.connect(lambda: self.micro.selectFile(QFileDialog().getOpenFileName(directory=self.micro.dir)))
+        self.ui.bootSelect.clicked.connect(lambda: self.micro.selectFile(QFileDialog().getOpenFileName(directory=self.micro.imageRecord.dir)))
         self.ui.sendBoot.clicked.connect(self.micro.sendFile)
         self.ui.bootLoaderProgressBar.reset()
         self.ui.bootLoaderProgressBar.setMaximum(1000)

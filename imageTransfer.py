@@ -43,42 +43,6 @@ class imageTransfer(QObject):
         # the actual image
         self.imageRecord = image.imageRecord()
 
-    @property
-    def size(self):
-        return self.imageRecord.size
-
-    @size.setter
-    def size(self, value):
-        self.imageRecord.size = value
-
-    @property
-    def checksum(self):
-        return self.imageRecord.checksum
-
-    @property
-    def dir(self):
-            return self.imageRecord.dir
-
-    @dir.setter
-    def dir(self, value):
-        self.imageRecord.dir = value
-
-    @property
-    def image(self):
-        return self.imageRecord.image
-
-    @property
-    def timestamp(self):
-        return self.imageRecord.timestamp
-
-    @property
-    def file(self):
-        return self.imageRecord.file
-
-    @file.setter
-    def file(self, value):
-        self.imageRecord.file = value
-
     def selectFile(self, file):
         if not file: return
         try:
@@ -92,7 +56,7 @@ class imageTransfer(QObject):
             traceback.print_exc(file=sys.stderr)
 
     def checkUpdates(self):
-        if self.imageRecord.timestamp != os.path.getmtime(self.file):
+        if self.imageRecord.timestamp != os.path.getmtime(self.imageRecord.file):
             warning(' disk image is newer - reloading ')
             self.selectFile(self.file)
             return True
@@ -120,7 +84,7 @@ class imageTransfer(QObject):
         if self.transferTimer.isActive():
             self.abort()
         else:
-            if self.image:
+            if self.imageRecord.image:
                 self.checkUpdates()
                 self.startTransferTime = time.time()
                 self.setProgress.emit(0)
@@ -137,7 +101,7 @@ class imageTransfer(QObject):
         pass
 
     def requestTransfer(self):
-        size = longList(self.size)
+        size = longList(self.imageRecord.size)
         name = list(map(ord, self.name)) + [0]
         type = [self.transferType]
         payload = self.who() + [TRANSFER_REQUEST] + size + type + name
@@ -146,7 +110,7 @@ class imageTransfer(QObject):
     def startTransfer(self):
         self.i = 0
         self.pointer = 0
-        self.left = self.size
+        self.left = self.imageRecord.size
 
         self.transferTimer.timeout.disconnect()
         self.transferTimer.timeout.connect(self.resendChunk)
@@ -163,7 +127,7 @@ class imageTransfer(QObject):
                 sendsize = self.left
                 self.left = 0
             self.transferData(self.image[self.pointer:self.pointer+sendsize])
-            self.setProgress.emit((self.size - self.left)/self.size)
+            self.setProgress.emit((self.imageRecord.size - self.left)/self.imageRecord.size)
             self.i += 1
             self.pointer += sendsize
             self.transferTimer.start(self.transferDelay)
@@ -196,7 +160,7 @@ class imageTransfer(QObject):
         self.protocol.sendNPS(self.transferPid, self.lastPayload)
 
     def transferDone(self):
-        payload = self.who() + [TRANSFER_DONE] + longList(self.checksum)
+        payload = self.who() + [TRANSFER_DONE] + longList(self.imageRecord.checksum)
         self.protocol.sendNPS(self.transferPid, payload)
 
     def transferResponse(self, packet):

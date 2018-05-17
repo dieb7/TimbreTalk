@@ -100,9 +100,9 @@ class srecordPane(QWidget):
 		self.ui.srecordFile.setText(target.filename)
 		self.ui.addressStart.setText(hex(target.start))
 		self.ui.targetAddress.setText(hex(target.target))
-		self.ui.size.setText(str(target.size))
+		self.ui.size.setText(str(target.imageRecord.size))
 		self.ui.entryPoint.setText(hex(target.entry))
-		self.ui.checkSum.setText("0x%X"%target.checksum) # prevent L suffix
+		self.ui.checkSum.setText("0x%X"%target.imageRecord.checksum) # prevent L suffix
 		self.ui.header.setChecked(target.headerFlag)
 		self.ui.endian.setChecked(target.endian == 'big')
 	
