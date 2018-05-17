@@ -10,17 +10,12 @@ from ctypes import *
 
 printme = 0
 
-class imageRecord(QObject):
-	MAX_IMAGE_SIZE = 1024 * 1024 * 2 # 2MB
-	HOLE_FILL = 0xFF
-	setSize = Signal(object)
-	setName = Signal(object)
-	setStart = Signal(object)
-	imageLoaded = Signal()
 
-	def __init__(self, parent):
-		QObject.__init__(self) # needed for signals to work!!
-		self.parent = parent
+class baseImageRecord(object):
+	MAX_IMAGE_SIZE = 1024 * 1024 * 2   # 2MB
+	HOLE_FILL = 0xFF
+
+	def __init__(self):
 		self.records = []
 		self.image = []
 		self.file = ''
@@ -30,6 +25,9 @@ class imageRecord(QObject):
 		self.size = 0
 		self.checksum = 0
 		self.ext = ''
+		self.entry = 0
+		self.start = 0
+		self.end = 0
 
 	def updateName(self, name):
 		self.name = name
@@ -46,27 +44,8 @@ class imageRecord(QObject):
 
 			self.ext = self.name.rsplit('.', 1)[-1]
 			self.addRecord()
-			self.imageLoaded.emit()
 
-	def selectFile(self, file):
-		if not file: return
-		try:
-			self.createImage(file)
-			self.setName.emit(self.name)
-			self.setSize.emit(str(self.size))
-			self.setStart.emit(hex(self.start))
-		except Exception, e:
-			print >>sys.stderr, e
-			traceback.print_exc(file=sys.stderr)
-	
-	def checkUpdates(self):
-		if self.timestamp != os.path.getmtime(self.file):
-			warning(' disk image is newer - reloading ')
-			self.selectFile(self.file)
-			return True
-		return False
-
-	def addRecord(self): # turn file into list of address,data tuples
+	def addRecord(self):  # turn file into list of address,data tuples
 		self.timestamp = os.path.getmtime(self.file) # remember for checking later
 		self.start = 0xFFFFFFFF
 		self.end = self.entry = self.size = 0
@@ -76,7 +55,7 @@ class imageRecord(QObject):
 			self.emptyImage()
 			self.image.extend(map(ord, open(self.file,'rb').read()))
 			self.end = self.size = len(self.image)
-		else: # massage contents of file
+		else:  # massage contents of file
 			if self.ext in ['srec', 'S19']: self.addSrecord()
 			elif self.ext in ['hex']: self.addHexRecord()
 			elif self.ext in ['elf']: self.addElfRecord()
@@ -91,8 +70,8 @@ class imageRecord(QObject):
 
 	def emptyImage(self):
 		del self.image[:]
-		
-	def makeImage(self): # direct memory image from hex strings with holes as 0xFF
+
+	def makeImage(self):  # direct memory image from hex strings with holes as 0xFF
 		self.emptyImage()
 		self.size = self.end - self.start
 		self.size = (self.size + 3) & ~3  # round up to multiple of 4
@@ -308,7 +287,7 @@ class imageRecord(QObject):
 		elf = elfHeader(endian)
 		file.seek(EI_MAG0)
 		file.readinto(elf)
-	
+
 		if elf.ident[EI_MAG0:EI_CLASS] != map(ord, [ELFMAG0, ELFMAG1, ELFMAG2, ELFMAG3]):
 			error('Not an elf file')
 			return
@@ -321,7 +300,7 @@ class imageRecord(QObject):
 
 		# program headers
 		ph = programHeader(endian)
-	
+
 		for i in range(elf.phnum):
 			file.seek(elf.phoff + i * sizeof(ph))
 			file.readinto(ph)
@@ -334,7 +313,42 @@ class imageRecord(QObject):
 				self.start = min(self.start, address)
 				self.end = max(self.end, address+len(data)/2)
 				if printme: print("address: %x  start: %x  end: %x"%(address, self.start, self.end))
-				
+
 		file.close()
-	
+
+
+class imageRecord(baseImageRecord, QObject):
+	setSize = Signal(object)
+	setName = Signal(object)
+	setStart = Signal(object)
+	imageLoaded = Signal()
+
+	def __init__(self, parent):
+		baseImageRecord.__init__(self)
+		QObject.__init__(self)  # needed for signals to work!!
+		self.parent = parent
+
+	def createImage(self, file):
+		if file:
+			baseImageRecord.createImage(self, file)
+			self.imageLoaded.emit()
+
+	def selectFile(self, file):
+		if not file: return
+		try:
+			self.createImage(file)
+			self.setName.emit(self.name)
+			self.setSize.emit(str(self.size))
+			self.setStart.emit(hex(self.start))
+		except Exception, e:
+			print >>sys.stderr, e
+			traceback.print_exc(file=sys.stderr)
+
+	def checkUpdates(self):
+		if self.timestamp != os.path.getmtime(self.file):
+			warning(' disk image is newer - reloading ')
+			self.selectFile(self.file)
+			return True
+		return False
+
 # unit test code: convert srec and hex file to images and compare checksums
