@@ -152,14 +152,14 @@ class stmTransfer(microTransfer):
         message(' flash erased in %.1f seconds' % elapsed, 'note')
 
         note('Download image ')
-        self.pointer = self.start
+        self.imageRecord.pointer = self.imageRecord.start
         self.writeCommand()
         self.chunk = 256
 
     def writeCommand(self):  # progress bar from .1 to .9
         self.transferTimer.start(2000)
-        self.setProgress.emit(.1 + (.8 * (self.pointer - self.start) / self.size))
-        if self.pointer < self.end:
+        self.setProgress.emit(.1 + (.8 * (self.pointer - self.imageRecord.start) / self.imageRecord.size))
+        if self.imageRecord.pointer < self.imageRecord.end:
             self.onAck(self.checked(0x31), self.writeAddress)
         else:
             self.verifyBoot()
@@ -171,13 +171,13 @@ class stmTransfer(microTransfer):
     def writeData(self):
         if not self.verbose:
             message('.', "note")
-        self.chunk = min(self.chunk, self.end - self.pointer)
+        self.chunk = min(self.chunk, self.imageRecord.end - self.pointer)
         if self.chunk % 4:
             error('Transfer size not a multiple of 4: %d' % self.chunk)
-            note('Image size: %d' % self.size)
-        index = self.pointer - self.start
+            note('Image size: %d' % self.imageRecord.size)
+        index = self.pointer - self.imageRecord.start
         self.pointer += self.chunk
-        data = self.image[index:index + self.chunk]
+        data = self.imageRecord.image[index:index + self.chunk]
         self.onAck(self.checksummed([self.chunk - 1] + data), self.writeCommand)
 
     def verifyBoot(self):  # not verified, just trusted
@@ -247,9 +247,9 @@ class efmTransfer(microTransfer):
 
         filename = self.imageRecord.file.rsplit(".", 1)[0] + ".bin" # xmodem works with binary image
         self.sent.value = 0
-        self.size = os.path.getsize(filename)
-        self.transferTimer.start(6000 + (self.size / 7)) # in ms
-        self.size /= 128
+        self.imageRecord.size = os.path.getsize(filename)
+        self.transferTimer.start(6000 + (self.imageRecord.size / 7)) # in ms
+        self.imageRecord.size /= 128
         stream = file(filename, 'rb')
 
         def xmsend():
@@ -267,7 +267,7 @@ class efmTransfer(microTransfer):
         self.updateProgressBar()
 
     def updateProgressBar(self):
-        progress = self.sent.value/self.size
+        progress = self.sent.value/self.imageRecord.size
         self.setProgress.emit(progress)
         if self.xm.is_alive():
             self.updateProgress = Timer(.5, self.updateProgressBar)
