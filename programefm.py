@@ -3,6 +3,8 @@ from image import imageRecord
 import serial
 import xmodem
 from tempfile import TemporaryFile
+from os.path import splitext
+import logging
 
 
 def create_xmodem_padded_temp_file(contents, packet_size=128, padding_char='\xff'):
@@ -15,14 +17,62 @@ def create_xmodem_padded_temp_file(contents, packet_size=128, padding_char='\xff
     return padded_file
 
 
+def get_image_content_from_file(image_path):
+    if splitext(image_path) == '.bin':
+        temp = open(image_path, "rb")
+        contents = temp.read()
+        temp.close()
+        image_content = contents
+    else:
+        image = imageRecord()
+        image.createImage(image_path)
+        image_content = bytearray(image.image)
+    return image_content
+
+
+def expected_flash_image(contents):
+    for i in range(0x100000 - len(contents)):
+        contents += '\xff'
+    return contents
+
+
+def calculate_flash_crc(contents):
+    from PyCRC.CRCCCITT import CRCCCITT
+    contents = expected_flash_image(contents)
+    return CRCCCITT(version='XModem').calculate(str(contents))
+
+
+def calculate_app_crc(contents):
+    from PyCRC.CRCCCITT import CRCCCITT
+    contents = expected_flash_image(contents)
+    contents = contents[0x1000:]
+    return CRCCCITT(version='XModem').calculate(contents)
+
+
+def get_crc_from_response(response):
+    return int(response.split('CRC: ')[1], 16)
+
+
 def main(args):
     parser = argparse.ArgumentParser(description='Programs an Efm32 micro using through the default serial bootloader')
     parser.add_argument('-p', '--port', help='Serial port to use', required=True)
     parser.add_argument('-i', '--image', help='Path to image', required=True, type=str)
     parser.add_argument('-a', '--address', help='Address to program image', default=0x0, type=int)
     parser.add_argument('-o', '--overwrite', help='Overwrite bootloader', default=True, type=int)
+    parser.add_argument('-l', '--log', help='Set debug level', default=logging.NOTSET, type=str)
 
     args = parser.parse_args()
+
+    logging.basicConfig(level=args.log)
+
+    image_content = get_image_content_from_file(args.image)
+    if len(image_content) == 0:
+        logging.error('Failed importing image file')
+        return -1
+
+    # here we will create temporary file from the original with some padding as the xmodem module adds some characters
+    # if this is not done
+    padded_file = create_xmodem_padded_temp_file(image_content)
 
     port = serial.Serial(port=args.port, baudrate=115200, parity=serial.PARITY_NONE, bytesize=serial.EIGHTBITS, stopbits=serial.STOPBITS_ONE, timeout=1, xonxoff=0, rtscts=0, dsrdtr=0)
 
@@ -43,43 +93,41 @@ def main(args):
         port.write(data)
 
     port_response = send_cmd('U')
-    print(port_response)
+    logging.debug(port_response)
 
-    # start_banner_fields = port_response.strip().split(' ')
-    #
-    # if len(start_banner_fields) != 3 or start_banner_fields[1] != 'ChipID:':
-    #     return -1
-    #
-    # print('Programing MCU with ID: {}'.format(start_banner_fields[2]))
+    start_banner = port_response.strip()
+
+    if 'ChipID:' not in start_banner and 'U\r\n?' != start_banner:
+        logging.error('Device did not respond to auto-baud command: {}'.format(port_response))
+        return -2
 
     port_response = send_cmd('d')
-    print(port_response)
-    if 'd\r\nReady\r\n' not in port_response.strip():
-        return -255
+    logging.debug(port_response)
+    if 'd\r\nReady' not in port_response.strip():
+        logging.error('Device did not respond to auto-baud command: {}'.format(port_response))
+        return -3
 
-    # here we will create temporary file from the original with some padding
-    image = imageRecord()
-    image.createImage(args.image)
-    padded_file = create_xmodem_padded_temp_file(bytearray(image.image))
-
-    print("will program micro")
+    logging.info("will program micro")
 
     xm = xmodem.XMODEM(getc, putc)
 
-    print(xm.send(padded_file))
+    if not xm.send(padded_file):
+        logging.error('Failed while programming EFM mcu')
+        return -4
 
     padded_file.close()
 
     port_response = send_cmd('v')
-    print(port_response)
-    port_response = send_cmd('c')
-    print(port_response)
-    port_response = send_cmd('n')
-    print(port_response)
-    port_response = send_cmd('m')
-    print(port_response)
+    actual_crc = get_crc_from_response(port_response)
+    expected_crc = calculate_flash_crc(image_content)
+    if actual_crc != expected_crc:
+        logging.error('Crc does not match. expected: {} actual: {}'.format(expected_crc, actual_crc))
+        return -5
 
+    send_cmd('b')
     port.close()
+
+    logging.info("Success!")
 
     return 0
 
