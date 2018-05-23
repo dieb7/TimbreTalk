@@ -54,6 +54,72 @@ def get_crc_from_response(response):
     return int(response.split('CRC: ')[1], 16)
 
 
+class ProgrammerPort(object):
+    def __init__(self, port):
+        self.port = port
+        self.__current_state = self.__idle_state
+        self.cmd = ''
+        self.response = ''
+        self.original_timeout = self.port.timeout
+        self.__retries = 0
+
+    @property
+    def retries(self):
+        return self.__retries
+
+    @retries.setter
+    def retries(self, value):
+        logging.debug('retries {}'.format(value))
+        self.__retries = value
+
+    def __idle_state(self):
+        logging.debug('__idle_state')
+        self.__current_state = self.__waiting_echo_state
+        self.port.write(self.cmd)
+        return False
+
+    def __waiting_echo_state(self):
+        logging.debug('__waiting_echo_state')
+        echo = self.port.readline().strip()
+        if self.cmd == 'U':  # the auto-baud command does not echo
+            self.__current_state = self.__waiting_response_state
+            return False
+        if self.cmd == echo + '\r\n':
+            self.retries -= 1
+        else:
+            self.__current_state = self.__waiting_response_state
+        return False
+
+    def __waiting_response_state(self):
+        logging.debug('__waiting_response_state')
+        self.response = self.port.readline().strip()
+        if self.response == '':
+            self.retries -= 1
+            return False
+        self.__current_state = self.__idle_state
+        return True
+
+    def send_cmd(self, cmd):
+        self.retries = 10
+        if self.port.timeout != self.original_timeout:
+            self.port.timeout = self.original_timeout
+        self.cmd = cmd
+        while not self.__current_state():
+            assert self.retries > 0, 'Too many retries'
+
+    def getc(self, size, timeout=1):
+        if timeout != self.port.timeout:
+            logging.debug("Changing getc timeout {}->{}".format(self.port.timeout, timeout))
+            self.port.timeout = timeout
+        return self.port.read(size)
+
+    def putc(self, data, timeout=1):
+        if timeout != self.port.timeout:
+            logging.debug("Changing putc timeout {}->{}".format(self.port.timeout, timeout))
+            self.port.timeout = timeout
+        self.port.write(data)
+
+
 def main(args):
     parser = argparse.ArgumentParser(description='Programs an Efm32 micro using through the default serial bootloader')
     parser.add_argument('-p', '--port', help='Serial port to use', required=True)
@@ -78,40 +144,28 @@ def main(args):
 
     port = serial.Serial(port=args.port, baudrate=args.baudrate, parity=serial.PARITY_NONE, bytesize=serial.EIGHTBITS, stopbits=serial.STOPBITS_ONE, timeout=1, xonxoff=0, rtscts=0, dsrdtr=0)
 
-    def send_cmd(cmd):
-        response = ''
-        port.write(cmd)
-        while True:
-            temp = port.read(1)
-            if temp == '':
-                break
-            response += temp
-        return response
+    programmer = ProgrammerPort(port)
 
-    def getc(size, timeout=1):
-        return port.read(size)
-
-    def putc(data, timeout=1):
-        port.write(data)
-
-    port_response = send_cmd('U')
+    programmer.send_cmd('U')
+    port_response = programmer.response
     logging.debug(port_response)
 
     start_banner = port_response.strip()
 
-    if 'ChipID:' not in start_banner and 'U\r\n?' != start_banner:
+    if 'Chip' not in start_banner and '?' != start_banner:
         logging.error('Device did not respond to auto-baud command: {}'.format(port_response))
         return -2
 
-    port_response = send_cmd('d')
+    programmer.send_cmd('d')
+    port_response = programmer.response
     logging.debug(port_response)
-    if 'd\r\nReady' not in port_response.strip():
-        logging.error('Device did not respond to auto-baud command: {}'.format(port_response))
+    if 'Ready' not in port_response.strip():
+        logging.error('Failed sending the program command: {}'.format(port_response))
         return -3
 
     logging.info("will program micro")
 
-    xm = xmodem.XMODEM(getc, putc)
+    xm = xmodem.XMODEM(programmer.getc, programmer.putc)
 
     if not xm.send(padded_file):
         logging.error('Failed while programming EFM mcu')
@@ -119,14 +173,16 @@ def main(args):
 
     padded_file.close()
 
-    port_response = send_cmd('v')
+    programmer.original_timeout = 20
+    programmer.send_cmd('v')
+    port_response = programmer.response
     actual_crc = get_crc_from_response(port_response)
     expected_crc = calculate_flash_crc(image_content)
     if actual_crc != expected_crc:
         logging.error('Crc does not match. expected: {} actual: {}'.format(expected_crc, actual_crc))
         return -5
 
-    send_cmd('b')
+    programmer.putc('b')
     port.close()
 
     logging.info("Success!")
