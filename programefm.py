@@ -18,7 +18,8 @@ def create_xmodem_padded_temp_file(contents, packet_size=128, padding_char='\xff
 
 
 def get_image_content_from_file(image_path):
-    if splitext(image_path) == '.bin':
+    ext = splitext(image_path)
+    if len(ext) == 2 and ext[1] == '.bin':
         temp = open(image_path, "rb")
         contents = temp.read()
         temp.close()
@@ -56,6 +57,7 @@ def get_crc_from_response(response):
 def main(args):
     parser = argparse.ArgumentParser(description='Programs an Efm32 micro using through the default serial bootloader')
     parser.add_argument('-p', '--port', help='Serial port to use', required=True)
+    parser.add_argument('-b', '--baudrate', help='Serial port to use', default=115200, type=int)
     parser.add_argument('-i', '--image', help='Path to image', required=True, type=str)
     parser.add_argument('-a', '--address', help='Address to program image', default=0x0, type=int)
     parser.add_argument('-o', '--overwrite', help='Overwrite bootloader', default=True, type=int)
@@ -74,7 +76,7 @@ def main(args):
     # if this is not done
     padded_file = create_xmodem_padded_temp_file(image_content)
 
-    port = serial.Serial(port=args.port, baudrate=115200, parity=serial.PARITY_NONE, bytesize=serial.EIGHTBITS, stopbits=serial.STOPBITS_ONE, timeout=1, xonxoff=0, rtscts=0, dsrdtr=0)
+    port = serial.Serial(port=args.port, baudrate=args.baudrate, parity=serial.PARITY_NONE, bytesize=serial.EIGHTBITS, stopbits=serial.STOPBITS_ONE, timeout=1, xonxoff=0, rtscts=0, dsrdtr=0)
 
     def send_cmd(cmd):
         response = ''
