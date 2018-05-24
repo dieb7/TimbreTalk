@@ -40,14 +40,14 @@ def expected_flash_image(contents):
 def calculate_flash_crc(contents):
     from PyCRC.CRCCCITT import CRCCCITT
     contents = expected_flash_image(contents)
-    return CRCCCITT(version='XModem').calculate(str(contents))
+    return CRCCCITT(version='XModem').calculate(bytes(contents))
 
 
 def calculate_app_crc(contents):
     from PyCRC.CRCCCITT import CRCCCITT
     contents = expected_flash_image(contents)
     contents = contents[0x1000:]
-    return CRCCCITT(version='XModem').calculate(contents)
+    return CRCCCITT(version='XModem').calculate(bytes(contents))
 
 
 def get_crc_from_response(response):
@@ -62,7 +62,7 @@ class ProgrammerPort(object):
         self.cmd = ''
         self.response = ''
         self.original_timeout = self.port.timeout
-        self.__retries = 0
+        self.__retries = 10
 
     @property
     def retries(self):
@@ -99,12 +99,13 @@ class ProgrammerPort(object):
         return True
 
     def send_cmd(self, cmd):
-        self.retries = 10
+        retries = self.retries
         if self.port.timeout != self.original_timeout:
             self.port.timeout = self.original_timeout
         self.cmd = cmd
         while not self.__current_state():
             assert self.retries > 0, 'Too many retries'
+        self.retries = retries
 
     def getc(self, size, timeout=1):
         if timeout != self.port.timeout:
@@ -125,7 +126,8 @@ def main(args):
     parser.add_argument('-b', '--baudrate', help='Serial port to use', default=115200, type=int)
     parser.add_argument('-i', '--image', help='Path to image', required=True, type=str)
     parser.add_argument('-a', '--address', help='Address to program image', default=0x0, type=int)
-    parser.add_argument('-o', '--overwrite', help='Overwrite bootloader', default=True, type=int)
+    parser.add_argument('-o', '--overwrite', help='Overwrite bootloader', action='store_true')
+    parser.add_argument('-c', '--check', help='Ask bootloader to return checksum', action='store_true')
     parser.add_argument('-l', '--log', help='Set debug level', default=logging.NOTSET, type=str)
 
     args = parser.parse_args()
@@ -141,7 +143,8 @@ def main(args):
     # if this is not done
     padded_file = create_xmodem_padded_temp_file(image_content)
 
-    port = serial.Serial(port=args.port, baudrate=args.baudrate, parity=serial.PARITY_NONE, bytesize=serial.EIGHTBITS, stopbits=serial.STOPBITS_ONE, timeout=1, xonxoff=0, rtscts=0, dsrdtr=0)
+    port = serial.Serial(port=args.port, baudrate=args.baudrate, parity=serial.PARITY_NONE, bytesize=serial.EIGHTBITS,
+                         stopbits=serial.STOPBITS_ONE, timeout=1, xonxoff=0, rtscts=0, dsrdtr=0)
 
     programmer = ProgrammerPort(port)
 
@@ -175,14 +178,16 @@ def main(args):
 
     padded_file.close()
 
-    programmer.original_timeout = 20
-    programmer.send_cmd(b'v')
-    port_response = programmer.response
-    actual_crc = get_crc_from_response(port_response)
-    expected_crc = calculate_flash_crc(image_content)
-    if actual_crc != expected_crc:
-        logging.error('Crc does not match. expected: {} actual: {}'.format(expected_crc, actual_crc))
-        return -5
+    if args.check:
+        programmer.retries = 1
+        programmer.original_timeout = 25
+        programmer.send_cmd(b'v')
+        port_response = programmer.response
+        actual_crc = get_crc_from_response(port_response)
+        expected_crc = calculate_flash_crc(image_content)
+        if actual_crc != expected_crc:
+            logging.error('Crc does not match. expected: {:08X} actual: {:08X}'.format(expected_crc, actual_crc))
+            return -5
 
     programmer.putc(b'b')
     port.close()
