@@ -71,7 +71,7 @@ class imageRecord(object):
 	def makeImage(self):  # direct memory image from hex strings with holes as 0xFF
 		self.emptyImage()
 		self.size = self.end - self.start
-		self.size = (self.size + 3) & ~3  # round up to multiple of 4
+		self.size = (int(self.size) + 3) & ~3  # round up to multiple of 4
 		if self.size > self.MAX_IMAGE_SIZE:
 			error('Image is too large! %d'%self.size)
 		else:
@@ -82,9 +82,9 @@ class imageRecord(object):
 				data = record[1]
 				if printme: print(" a = %x  data = %s "%(a,data[0:20]))
 				for i in range(0,len(data),2):
-					if self.image[a+i/2] != 0xFF:
+					if self.image[int(a+i/2)] != 0xFF:
 						warning('\nimageRecord.makeImage: Overwrite data at %x'%(self.start + a + i/2))
-					self.image[a+i/2] = int(data[i:i+2], 16)
+					self.image[int(a+i/2)] = int(data[i:i+2], 16)
 	
 	'''
 	Intel Hex format from Wikipedia:

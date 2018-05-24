@@ -7,10 +7,10 @@ from os.path import splitext
 import logging
 
 
-def create_xmodem_padded_temp_file(contents, packet_size=128, padding_char='\xff'):
+def create_xmodem_padded_temp_file(contents, packet_size=128, padding_char=b'\xff'):
     transfer_padding = packet_size - (len(contents) % packet_size)
     for i in range(transfer_padding):
-        contents += padding_char
+        contents += bytearray(padding_char)
     padded_file = TemporaryFile(mode='r+b')
     padded_file.write(contents)
     padded_file.seek(0)
@@ -20,7 +20,7 @@ def create_xmodem_padded_temp_file(contents, packet_size=128, padding_char='\xff
 def get_image_content_from_file(image_path):
     ext = splitext(image_path)
     if len(ext) == 2 and ext[1] == '.bin':
-        temp = open(image_path, "rb")
+        temp = open(image_path, 'rb')
         contents = temp.read()
         temp.close()
         image_content = contents
@@ -33,7 +33,7 @@ def get_image_content_from_file(image_path):
 
 def expected_flash_image(contents):
     for i in range(0x100000 - len(contents)):
-        contents += '\xff'
+        contents += b'\xff'
     return contents
 
 
@@ -51,7 +51,8 @@ def calculate_app_crc(contents):
 
 
 def get_crc_from_response(response):
-    return int(response.split('CRC: ')[1], 16)
+    crc_str = response.decode("utf-8")
+    return int(crc_str.split('CRC: ')[1], 16)
 
 
 class ProgrammerPort(object):
@@ -81,19 +82,17 @@ class ProgrammerPort(object):
     def __waiting_echo_state(self):
         logging.debug('__waiting_echo_state')
         echo = self.port.readline().strip()
-        if self.cmd == 'U':  # the auto-baud command does not echo
-            self.__current_state = self.__waiting_response_state
-            return False
-        if self.cmd == echo + '\r\n':
-            self.retries -= 1
-        else:
-            self.__current_state = self.__waiting_response_state
+        if self.cmd != echo:
+            if self.cmd != b'U':  # the auto-baud command does not echo
+                self.retries -= 1
+                return False
+        self.__current_state = self.__waiting_response_state
         return False
 
     def __waiting_response_state(self):
         logging.debug('__waiting_response_state')
         self.response = self.port.readline().strip()
-        if self.response == '':
+        if self.response == b'':
             self.retries -= 1
             return False
         self.__current_state = self.__idle_state
@@ -109,13 +108,13 @@ class ProgrammerPort(object):
 
     def getc(self, size, timeout=1):
         if timeout != self.port.timeout:
-            logging.debug("Changing getc timeout {}->{}".format(self.port.timeout, timeout))
+            logging.debug('Changing getc timeout {}->{}'.format(self.port.timeout, timeout))
             self.port.timeout = timeout
         return self.port.read(size)
 
     def putc(self, data, timeout=1):
         if timeout != self.port.timeout:
-            logging.debug("Changing putc timeout {}->{}".format(self.port.timeout, timeout))
+            logging.debug('Changing putc timeout {}->{}'.format(self.port.timeout, timeout))
             self.port.timeout = timeout
         self.port.write(data)
 
@@ -146,24 +145,27 @@ def main(args):
 
     programmer = ProgrammerPort(port)
 
-    programmer.send_cmd('U')
+    programmer.send_cmd(b'U')
     port_response = programmer.response
     logging.debug(port_response)
 
     start_banner = port_response.strip()
 
-    if 'Chip' not in start_banner and '?' != start_banner:
+    if b'Chip' not in start_banner and b'?' != start_banner:
         logging.error('Device did not respond to auto-baud command: {}'.format(port_response))
         return -2
 
-    programmer.send_cmd('d')
+    if args.overwrite:
+        programmer.send_cmd(b'd')
+    else:
+        programmer.send_cmd(b'u')
     port_response = programmer.response
     logging.debug(port_response)
-    if 'Ready' not in port_response.strip():
+    if b'Ready' not in port_response.strip():
         logging.error('Failed sending the program command: {}'.format(port_response))
         return -3
 
-    logging.info("will program micro")
+    logging.info('will program micro')
 
     xm = xmodem.XMODEM(programmer.getc, programmer.putc)
 
@@ -174,7 +176,7 @@ def main(args):
     padded_file.close()
 
     programmer.original_timeout = 20
-    programmer.send_cmd('v')
+    programmer.send_cmd(b'v')
     port_response = programmer.response
     actual_crc = get_crc_from_response(port_response)
     expected_crc = calculate_flash_crc(image_content)
@@ -182,10 +184,10 @@ def main(args):
         logging.error('Crc does not match. expected: {} actual: {}'.format(expected_crc, actual_crc))
         return -5
 
-    programmer.putc('b')
+    programmer.putc(b'b')
     port.close()
 
-    logging.info("Success!")
+    logging.info('Success!')
 
     return 0
 
