@@ -120,21 +120,10 @@ class ProgrammerPort(object):
         self.port.write(data)
 
 
-def main(args):
-    parser = argparse.ArgumentParser(description='Programs an Efm32 micro using through the default serial bootloader')
-    parser.add_argument('-p', '--port', help='Serial port to use', required=True)
-    parser.add_argument('-b', '--baudrate', help='Serial port to use', default=115200, type=int)
-    parser.add_argument('-i', '--image', help='Path to image', required=True, type=str)
-    parser.add_argument('-a', '--address', help='Address to program image', default=0x0, type=int)
-    parser.add_argument('-o', '--overwrite', help='Overwrite bootloader', action='store_true')
-    parser.add_argument('-c', '--check', help='Ask bootloader to return checksum', action='store_true')
-    parser.add_argument('-l', '--log', help='Set debug level', default=logging.NOTSET, type=str)
+def do_efm_programmming(args_port, args_baudrate, args_image, args_overwrite, args_check, args_log):
+    logging.basicConfig(level=args_log)
 
-    args = parser.parse_args()
-
-    logging.basicConfig(level=args.log)
-
-    image_content = get_image_content_from_file(args.image)
+    image_content = get_image_content_from_file(args_image)
     if len(image_content) == 0:
         logging.error('Failed importing image file')
         return -1
@@ -143,7 +132,7 @@ def main(args):
     # if this is not done
     padded_file = create_xmodem_padded_temp_file(image_content)
 
-    port = serial.Serial(port=args.port, baudrate=args.baudrate, parity=serial.PARITY_NONE, bytesize=serial.EIGHTBITS,
+    port = serial.Serial(port=args_port, baudrate=args_baudrate, parity=serial.PARITY_NONE, bytesize=serial.EIGHTBITS,
                          stopbits=serial.STOPBITS_ONE, timeout=1, xonxoff=0, rtscts=0, dsrdtr=0)
 
     programmer = ProgrammerPort(port)
@@ -158,7 +147,7 @@ def main(args):
         logging.error('Device did not respond to auto-baud command: {}'.format(port_response))
         return -2
 
-    if args.overwrite:
+    if args_overwrite:
         programmer.send_cmd(b'd')
     else:
         programmer.send_cmd(b'u')
@@ -178,7 +167,7 @@ def main(args):
 
     padded_file.close()
 
-    if args.check:
+    if args_check:
         programmer.retries = 1
         programmer.original_timeout = 25
         programmer.send_cmd(b'v')
@@ -195,6 +184,21 @@ def main(args):
     logging.info('Success!')
 
     return 0
+
+
+def main(args):
+    parser = argparse.ArgumentParser(description='Programs an Efm32 micro using through the default serial bootloader')
+    parser.add_argument('-p', '--port', help='Serial port to use', required=True)
+    parser.add_argument('-b', '--baudrate', help='Serial port to use', default=115200, type=int)
+    parser.add_argument('-i', '--image', help='Path to image', required=True, type=str)
+    parser.add_argument('-a', '--address', help='Address to program image', default=0x0, type=int)
+    parser.add_argument('-o', '--overwrite', help='Overwrite bootloader', action='store_true')
+    parser.add_argument('-c', '--check', help='Ask bootloader to return checksum', action='store_true')
+    parser.add_argument('-l', '--log', help='Set debug level', default=logging.NOTSET, type=str)
+
+    args = parser.parse_args()
+
+    return do_efm_programmming(args.port, args.baudrate, args.image, args.overwrite, args.check, args.log)
 
 
 if __name__ == '__main__':
