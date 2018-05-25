@@ -120,9 +120,7 @@ class ProgrammerPort(object):
         self.port.write(data)
 
 
-def do_efm_programmming(args_port, args_baudrate, args_image, args_overwrite, args_check, args_log):
-    logging.basicConfig(level=args_log)
-
+def do_efm_programmming(args_port, args_baudrate, args_image, args_overwrite, args_check):
     image_content = get_image_content_from_file(args_image)
     if len(image_content) == 0:
         logging.error('Failed importing image file')
@@ -198,7 +196,9 @@ def main(args):
 
     args = parser.parse_args()
 
-    return do_efm_programmming(args.port, args.baudrate, args.image, args.overwrite, args.check, args.log)
+    logging.basicConfig(level=args.log)
+
+    return do_efm_programmming(args.port, args.baudrate, args.image, args.overwrite, args.check)
 
 
 if __name__ == '__main__':
